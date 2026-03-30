@@ -1,0 +1,22 @@
+{
+  "name": "Roznamcha — Bhatti Mobile Center",
+  "short_name": "Roznamcha",
+  "description": "Daily shop ledger for Bhatti Mobile Center",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c0e14",
+  "theme_color": "#f0a500",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
