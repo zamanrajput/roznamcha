@@ -21,12 +21,21 @@ const FLEXIBLE_ACCOUNT: TransactionType[] = ['accessories_repair', 'other']
 const ALL_TYPES: TransactionType[] = [
   'load', 'package', 'withdrawal', 'send_money',
   'bill_payment', 'data', 'accessories_repair',
-  'cash_to_jazzcash', 'jazzcash_to_cash', 'other',
+  'cash_to_jazzcash', 'jazzcash_to_cash', 'internal', 'other',
+]
+
+type InternalSubType = 'ghar_se_laya' | 'ghar_wapas' | 'personal_expense' | 'staff_payment'
+
+const INTERNAL_SUBTYPES: { key: InternalSubType; label: string; icon: string; direction: Direction }[] = [
+  { key: 'ghar_se_laya',      label: 'Ghar se laya',     icon: '🏠', direction: 'in' },
+  { key: 'ghar_wapas',        label: 'Ghar wapas diya',  icon: '↩️', direction: 'out' },
+  { key: 'personal_expense',  label: 'Personal expense', icon: '👤', direction: 'out' },
+  { key: 'staff_payment',     label: 'Staff payment',    icon: '👷', direction: 'out' },
 ]
 
 const FEE_RATES: Record<string, number> = {
-  withdrawal: 20,   // Rs. 20 per 1000
-  send_money: 10,   // Rs. 10 per 1000
+  withdrawal: 20,
+  send_money: 10,
 }
 
 function calcAutoFee(type: string, amount: string): string {
@@ -40,10 +49,11 @@ export default function AddTransactionModal({ onAdd, onClose, sessionId, session
   const [simAccount, setSimAccount] = useState<Account>('jazz_retailer')
   const [flexAccount, setFlexAccount] = useState<Account>('cash')
   const [flexDir, setFlexDir] = useState<Direction>('in')
-  const [amount, setAmount] = useState('')       // customer se liya / main amount
-  const [simCost, setSimCost] = useState('')     // load/package actual SIM cost
-  const [fee, setFee] = useState('')             // withdrawal/send_money fee
-  const [commission, setCommission] = useState('') // bill commission
+  const [internalSubType, setInternalSubType] = useState<InternalSubType>('ghar_se_laya')
+  const [amount, setAmount] = useState('')
+  const [simCost, setSimCost] = useState('')
+  const [fee, setFee] = useState('')
+  const [commission, setCommission] = useState('')
   const [description, setDescription] = useState('')
 
   const now = new Date().toISOString()
@@ -96,6 +106,13 @@ export default function AddTransactionModal({ onAdd, onClose, sessionId, session
         return [
           { ...base, account: 'cash', direction: 'in', amount: amt, is_commission: true, description: description || 'Data fee' },
         ]
+
+      case 'internal': {
+        const sub = INTERNAL_SUBTYPES.find(s => s.key === internalSubType)!
+        return [
+          { ...base, account: 'cash', direction: sub.direction, amount: amt, description: description || sub.label },
+        ]
+      }
 
       case 'accessories_repair':
       case 'other':
@@ -242,6 +259,38 @@ export default function AddTransactionModal({ onAdd, onClose, sessionId, session
                     fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-baloo)', cursor: 'pointer',
                   }}>
                   {d === 'in' ? '↑ Money IN' : '↓ Money OUT'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Internal sub-type selector */}
+        {type === 'internal' && (
+          <div style={{ marginBottom: 16 }} className="animate-fade">
+            {label('Sub Type')}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+              {INTERNAL_SUBTYPES.map(sub => (
+                <button
+                  key={sub.key}
+                  onClick={() => setInternalSubType(sub.key)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '12px', borderRadius: 12,
+                    border: `1px solid ${internalSubType === sub.key ? (sub.direction === 'in' ? 'var(--green)' : 'var(--red)') : 'var(--border)'}`,
+                    background: internalSubType === sub.key ? (sub.direction === 'in' ? 'var(--green-dim)' : 'var(--red-dim)') : 'var(--s2)',
+                    cursor: 'pointer', transition: 'all 0.15s',
+                  }}
+                >
+                  <span style={{ fontSize: 20 }}>{sub.icon}</span>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: internalSubType === sub.key ? (sub.direction === 'in' ? 'var(--green)' : 'var(--red)') : 'var(--text)' }}>
+                      {sub.label}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--t3)' }}>
+                      Cash {sub.direction === 'in' ? '↑ IN' : '↓ OUT'}
+                    </div>
+                  </div>
                 </button>
               ))}
             </div>

@@ -10,6 +10,7 @@ export type TransactionType =
   | 'data'
   | 'cash_to_jazzcash'
   | 'jazzcash_to_cash'
+  | 'internal'
   | 'other'
 
 export type Direction = 'in' | 'out'
@@ -101,6 +102,7 @@ export const TYPE_LABELS: Record<TransactionType, string> = {
   data: 'Data',
   cash_to_jazzcash: 'Cash → JazzCash',
   jazzcash_to_cash: 'JazzCash → Cash',
+  internal: 'Internal',
   other: 'Other',
 }
 
@@ -114,6 +116,7 @@ export const TYPE_ICONS: Record<TransactionType, string> = {
   data: '💾',
   cash_to_jazzcash: '🔄',
   jazzcash_to_cash: '🔄',
+  internal: '🏠',
   other: '📝',
 }
 

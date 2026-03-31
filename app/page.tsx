@@ -11,8 +11,9 @@ const OpeningBalancesScreen = dynamic(() => import('@/components/OpeningBalances
 const DashboardScreen = dynamic(() => import('@/components/DashboardScreen'), { ssr: false })
 const CheckoutScreen = dynamic(() => import('@/components/CheckoutScreen'), { ssr: false })
 const BillsScreen = dynamic(() => import('@/components/BillsScreen'), { ssr: false })
+const ReportsScreen = dynamic(() => import('@/components/ReportsScreen'), { ssr: false })
 
-type AppState = 'loading' | 'pin' | 'checkin' | 'balances' | 'dashboard' | 'checkout' | 'bills'
+type AppState = 'loading' | 'pin' | 'checkin' | 'balances' | 'dashboard' | 'checkout' | 'bills' | 'reports'
 
 export default function Home() {
   const [state, setState] = useState<AppState>('loading')
@@ -22,7 +23,6 @@ export default function Home() {
   useEffect(() => {
     const init = async () => {
       try {
-        // One-time sync of any local data to cloud
         syncLocalToCloud()
         const existing = await getTodaySession()
         if (existing && existing.status === 'open') {
@@ -80,16 +80,14 @@ export default function Home() {
           session={session}
           onCheckout={() => setState('checkout')}
           onBills={() => setState('bills')}
+          onReports={() => setState('reports')}
         />
       )}
       {state === 'checkout' && session && (
-        <CheckoutScreen
-          session={session}
-          onDone={handleDone}
-          onBack={() => setState('dashboard')}
-        />
+        <CheckoutScreen session={session} onDone={handleDone} onBack={() => setState('dashboard')} />
       )}
       {state === 'bills' && <BillsScreen onBack={() => setState('dashboard')} />}
+      {state === 'reports' && <ReportsScreen onBack={() => setState('dashboard')} />}
     </>
   )
 }

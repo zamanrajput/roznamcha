@@ -1,23 +1,41 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, LogOut, FileText, Trash2, Bell } from 'lucide-react'
+import { Plus, LogOut, Trash2, Bell, BarChart2 } from 'lucide-react'
 import type { Session, Transaction, Account, TransactionType, Direction } from '@/lib/types'
 import { ACCOUNT_LABELS, ACCOUNT_COLORS, ACCOUNT_SHORT, ALL_ACCOUNTS, TYPE_LABELS } from '@/lib/types'
-import { getSessionTransactions, addTransactions, deleteTransaction, calculateExpectedClosing } from '@/lib/data'
+import { getSessionTransactions, addTransactions, deleteTransaction, calculateExpectedClosing, syncAllToCloud } from '@/lib/data'
 import AddTransactionModal from './AddTransactionModal'
 
 interface DashboardProps {
   session: Session
   onCheckout: () => void
   onBills: () => void
+  onReports: () => void
 }
 
-export default function DashboardScreen({ session, onCheckout, onBills }: DashboardProps) {
+export default function DashboardScreen({ session, onCheckout, onBills, onReports }: DashboardProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [showAdd, setShowAdd] = useState(false)
   const [liveTime, setLiveTime] = useState('')
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState('')
+
+  const handleSync = async () => {
+    setSyncing(true)
+    setSyncMsg('')
+    try {
+      const result = await syncAllToCloud()
+      setSyncMsg(`✓ ${result.transactions} entries synced`)
+      load()
+    } catch {
+      setSyncMsg('✗ Internet nahi hai')
+    } finally {
+      setSyncing(false)
+      setTimeout(() => setSyncMsg(''), 3000)
+    }
+  }
 
   const load = useCallback(async () => {
     const txs = await getSessionTransactions(session.id)
@@ -74,8 +92,25 @@ export default function DashboardScreen({ session, onCheckout, onBills }: Dashbo
               {new Date(session.date).toLocaleDateString('en-PK', { weekday: 'short', day: 'numeric', month: 'short' })} — {session.operator_name}
             </div>
           </div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--t2)', textAlign: 'right' }}>
-            {liveTime}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {syncMsg && <span style={{ fontSize: 11, color: syncMsg.startsWith('✓') ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{syncMsg}</span>}
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              title="Sync to cloud"
+              style={{
+                background: 'var(--s2)', border: '1px solid var(--border)',
+                borderRadius: 8, padding: '6px 10px', cursor: 'pointer',
+                color: 'var(--t2)', fontSize: 12, fontWeight: 700,
+                fontFamily: 'var(--font-baloo)',
+                opacity: syncing ? 0.5 : 1,
+              }}
+            >
+              {syncing ? '⏳' : '☁️'} Sync
+            </button>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--t2)' }}>
+              {liveTime}
+            </div>
           </div>
         </div>
       </div>
@@ -223,6 +258,20 @@ export default function DashboardScreen({ session, onCheckout, onBills }: Dashbo
           }}
         >
           <Bell size={16} /> Bills
+        </button>
+
+        <button
+          onClick={onReports}
+          style={{
+            flex: 1, padding: '13px',
+            borderRadius: 12, border: '1px solid var(--border)',
+            background: 'var(--s2)', color: 'var(--t2)',
+            fontSize: 14, fontWeight: 700,
+            fontFamily: 'var(--font-baloo)', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+          }}
+        >
+          <BarChart2 size={16} /> Reports
         </button>
 
         <button
