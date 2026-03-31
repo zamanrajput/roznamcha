@@ -10,7 +10,6 @@ const isOnline = () => typeof navigator !== 'undefined' && navigator.onLine
 export async function getSavedPin(): Promise<string> {
   const setting = await idbGet<{ key: string; value: string }>('settings', 'pin')
   if (setting) return setting.value
-  // default pin
   await idbPut('settings', { key: 'pin', value: '5858' })
   return '5858'
 }
@@ -22,17 +21,20 @@ export async function savePin(pin: string): Promise<void> {
 // ─── SESSIONS ─────────────────────────────────────────────────────────────────
 export async function getTodaySession(): Promise<Session | null> {
   const today = new Date().toISOString().split('T')[0]
-  const local = await idbGet<Session>('sessions', today)
-  if (local) return local
 
+  // Always try Supabase first if online — so all devices stay in sync
   if (isOnline()) {
-    const { data } = await supabase.from('sessions').select('*').eq('date', today).single()
+    const { data } = await supabase.from('sessions').select('*').eq('date', today).maybeSingle()
     if (data) {
-      await idbPut('sessions', { ...data, id: data.date })
-      return data as Session
+      const session = { ...data, id: data.date } as Session
+      await idbPut('sessions', session)
+      return session
     }
   }
-  return null
+
+  // Fallback to local
+  const local = await idbGet<Session>('sessions', today)
+  return local || null
 }
 
 export async function createSession(operatorName: string, openingBalances: OpeningBalances): Promise<Session> {
@@ -48,7 +50,7 @@ export async function createSession(operatorName: string, openingBalances: Openi
   await idbPut('sessions', session)
 
   if (isOnline()) {
-    await supabase.from('sessions').upsert({ ...session, id: crypto.randomUUID() })
+    await supabase.from('sessions').upsert({ ...session, id: today })
   }
   return session
 }
@@ -56,7 +58,8 @@ export async function createSession(operatorName: string, openingBalances: Openi
 export async function closeSession(
   sessionId: string,
   closingBalances: OpeningBalances,
-  checksumPassed: boolean
+  checksumPassed: boolean,
+  explanation?: string
 ): Promise<void> {
   const session = await idbGet<Session>('sessions', sessionId)
   if (!session) return
@@ -66,6 +69,7 @@ export async function closeSession(
     checkout_time: new Date().toISOString(),
     closing_balances: closingBalances,
     checksum_passed: checksumPassed,
+    checksum_explanation: explanation || null,
   }
   await idbPut('sessions', updated)
 
@@ -75,19 +79,76 @@ export async function closeSession(
       checkout_time: updated.checkout_time,
       closing_balances: closingBalances,
       checksum_passed: checksumPassed,
+      checksum_explanation: explanation || null,
     }).eq('date', sessionId)
   }
 }
 
 export async function getAllSessions(): Promise<Session[]> {
+  if (isOnline()) {
+    const { data } = await supabase.from('sessions').select('*').order('date', { ascending: false }).limit(30)
+    if (data) {
+      for (const s of data) await idbPut('sessions', { ...s, id: s.date })
+      return data.map(s => ({ ...s, id: s.date })) as Session[]
+    }
+  }
   const sessions = await idbGetAll<Session>('sessions')
   return sessions.sort((a, b) => b.date.localeCompare(a.date))
 }
 
 // ─── TRANSACTIONS ─────────────────────────────────────────────────────────────
 export async function getSessionTransactions(sessionId: string): Promise<Transaction[]> {
+  // Always fetch from Supabase if online — ensures all devices see same data
+  if (isOnline()) {
+    const { data } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('time', { ascending: false })
+
+    if (data && data.length > 0) {
+      // Sync to local IDB
+      for (const tx of data) await idbPut('transactions', tx)
+      return data as Transaction[]
+    }
+  }
+
+  // Fallback to local
   const txs = await idbGetByIndex<Transaction>('transactions', 'session_id', sessionId)
   return txs.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+}
+
+export async function syncAllToCloud(): Promise<{ sessions: number; transactions: number }> {
+  if (!isOnline()) throw new Error('Internet nahi hai')
+
+  // Sync sessions
+  const localSessions = await idbGetAll<Session>('sessions')
+  let syncedSessions = 0
+  for (const session of localSessions) {
+    const { error } = await supabase.from('sessions').upsert({ ...session, id: session.date })
+    if (!error) syncedSessions++
+  }
+
+  // Sync transactions
+  const localTxs = await idbGetAll<Transaction>('transactions')
+  let syncedTxs = 0
+  if (localTxs.length > 0) {
+    // Get existing IDs from Supabase to avoid duplicates
+    const { data: existing } = await supabase
+      .from('transactions')
+      .select('id')
+      .in('id', localTxs.map(t => t.id))
+
+    const existingIds = new Set((existing || []).map((e: { id: string }) => e.id))
+    const newTxs = localTxs.filter(t => !existingIds.has(t.id))
+
+    if (newTxs.length > 0) {
+      const { error } = await supabase.from('transactions').insert(newTxs)
+      if (!error) syncedTxs = newTxs.length
+    }
+  }
+
+  return { sessions: syncedSessions, transactions: syncedTxs }
 }
 
 export async function addTransaction(tx: Omit<Transaction, 'id'>): Promise<Transaction> {
@@ -101,9 +162,7 @@ export async function addTransaction(tx: Omit<Transaction, 'id'>): Promise<Trans
 
 export async function addTransactions(txs: Omit<Transaction, 'id'>[]): Promise<Transaction[]> {
   const newTxs: Transaction[] = txs.map(tx => ({ ...tx, id: crypto.randomUUID() }))
-  for (const tx of newTxs) {
-    await idbPut('transactions', tx)
-  }
+  for (const tx of newTxs) await idbPut('transactions', tx)
   if (isOnline()) {
     await supabase.from('transactions').insert(newTxs)
   }
@@ -119,15 +178,14 @@ export async function deleteTransaction(id: string): Promise<void> {
 
 // ─── BILLS ────────────────────────────────────────────────────────────────────
 export async function getAllBills(): Promise<Bill[]> {
-  let bills = await idbGetAll<Bill>('bills')
-
-  if (isOnline() && bills.length === 0) {
+  if (isOnline()) {
     const { data } = await supabase.from('bills').select('*').eq('paid', false)
-    if (data && data.length > 0) {
+    if (data) {
       for (const b of data) await idbPut('bills', b)
-      bills = data as Bill[]
+      return (data as Bill[]).sort((a, b) => a.due_date.localeCompare(b.due_date))
     }
   }
+  const bills = await idbGetAll<Bill>('bills')
   return bills.filter(b => !b.paid).sort((a, b) => a.due_date.localeCompare(b.due_date))
 }
 
@@ -149,8 +207,7 @@ export async function addBill(bill: Omit<Bill, 'id' | 'reminder_sent' | 'paid' |
 export async function markBillPaid(id: string): Promise<void> {
   const bill = await idbGet<Bill>('bills', id)
   if (!bill) return
-  const updated = { ...bill, paid: true }
-  await idbPut('bills', updated)
+  await idbPut('bills', { ...bill, paid: true })
   if (isOnline()) {
     await supabase.from('bills').update({ paid: true }).eq('id', id)
   }
@@ -172,7 +229,61 @@ export async function markReminderSent(id: string): Promise<void> {
   }
 }
 
-// ─── CHECKSUM ─────────────────────────────────────────────────────────────────
+// ─── ONE-TIME LOCAL → SUPABASE SYNC ──────────────────────────────────────────
+// Runs once on app load — pushes any local-only data to Supabase
+export async function syncLocalToCloud(): Promise<void> {
+  if (!isOnline()) return
+
+  // Check if already synced
+  const synced = await idbGet<{ key: string; value: string }>('settings', 'cloud_synced')
+  if (synced?.value === 'true') return
+
+  try {
+    // Sync sessions
+    const localSessions = await idbGetAll<Session>('sessions')
+    for (const session of localSessions) {
+      const { data } = await supabase.from('sessions').select('id').eq('date', session.date).maybeSingle()
+      if (!data) {
+        await supabase.from('sessions').upsert({ ...session, id: session.date })
+      }
+    }
+
+    // Sync transactions
+    const localTxs = await idbGetAll<Transaction>('transactions')
+    if (localTxs.length > 0) {
+      // Get existing IDs from Supabase
+      const { data: existingIds } = await supabase
+        .from('transactions')
+        .select('id')
+        .in('id', localTxs.map(t => t.id))
+
+      const existingSet = new Set((existingIds || []).map((r: { id: string }) => r.id))
+      const newTxs = localTxs.filter(t => !existingSet.has(t.id))
+
+      if (newTxs.length > 0) {
+        // Insert in batches of 50
+        for (let i = 0; i < newTxs.length; i += 50) {
+          await supabase.from('transactions').insert(newTxs.slice(i, i + 50))
+        }
+      }
+    }
+
+    // Sync bills
+    const localBills = await idbGetAll<Bill>('bills')
+    for (const bill of localBills) {
+      const { data } = await supabase.from('bills').select('id').eq('id', bill.id).maybeSingle()
+      if (!data) {
+        await supabase.from('bills').insert(bill)
+      }
+    }
+
+    // Mark as synced
+    await idbPut('settings', { key: 'cloud_synced', value: 'true' })
+    console.log('✓ Local data synced to cloud')
+  } catch (e) {
+    console.error('Sync error:', e)
+  }
+}
 export function calculateExpectedClosing(
   opening: OpeningBalances,
   transactions: Transaction[]

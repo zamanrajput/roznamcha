@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Baloo_Bhaijaan_2, JetBrains_Mono } from 'next/font/google'
 import './globals.css'
 
@@ -18,12 +18,15 @@ export const metadata: Metadata = {
   title: 'Roznamcha — Bhatti Mobile Center',
   description: 'Daily shop ledger for Bhatti Mobile Center',
   manifest: '/manifest.json',
-  themeColor: '#f0a500',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
     title: 'Roznamcha',
   },
+}
+
+export const viewport: Viewport = {
+  themeColor: '#f0a500',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

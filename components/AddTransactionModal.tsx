@@ -24,6 +24,17 @@ const ALL_TYPES: TransactionType[] = [
   'cash_to_jazzcash', 'jazzcash_to_cash', 'other',
 ]
 
+const FEE_RATES: Record<string, number> = {
+  withdrawal: 20,   // Rs. 20 per 1000
+  send_money: 10,   // Rs. 10 per 1000
+}
+
+function calcAutoFee(type: string, amount: string): string {
+  const amt = parseFloat(amount || '0')
+  if (!amt || !FEE_RATES[type]) return ''
+  return String(Math.round((amt * FEE_RATES[type]) / 1000))
+}
+
 export default function AddTransactionModal({ onAdd, onClose, sessionId, sessionDate }: AddTransactionModalProps) {
   const [type, setType] = useState<TransactionType | ''>('')
   const [simAccount, setSimAccount] = useState<Account>('jazz_retailer')
@@ -41,8 +52,7 @@ export default function AddTransactionModal({ onAdd, onClose, sessionId, session
   const canSubmit = (() => {
     if (!type || !amount || parseFloat(amount) <= 0) return false
     if (NEEDS_SIM_COST.includes(type as TransactionType) && (!simCost || parseFloat(simCost) <= 0)) return false
-    if (NEEDS_FEE.includes(type as TransactionType) && (!fee || parseFloat(fee) < 0)) return false
-    if (NEEDS_COMMISSION.includes(type as TransactionType) && (!commission || parseFloat(commission) < 0)) return false
+    if (NEEDS_COMMISSION.includes(type as TransactionType) && commission !== '' && parseFloat(commission) < 0) return false
     return true
   })()
 
@@ -64,7 +74,7 @@ export default function AddTransactionModal({ onAdd, onClose, sessionId, session
 
       case 'withdrawal':
         return [
-          { ...base, account: 'jazzcash_business', direction: 'in', amount: amt, description: description || 'Withdrawal — JazzCash IN' },
+          { ...base, account: 'jazzcash_business', direction: 'in', amount: amt + feeAmt, description: description || 'Withdrawal — JazzCash IN (with fee)' },
           { ...base, account: 'cash', direction: 'out', amount: amt, description: description || 'Withdrawal — Cash OUT' },
           ...(feeAmt > 0 ? [{ ...base, account: 'cash' as Account, direction: 'in' as Direction, amount: feeAmt, is_commission: true, description: 'Withdrawal Fee' }] : []),
         ]
@@ -245,10 +255,18 @@ export default function AddTransactionModal({ onAdd, onClose, sessionId, session
             <div style={{ marginBottom: 14 }}>
               {label(
                 type === 'load' || type === 'package' ? 'Customer se liya (Rs.)' :
+                type === 'withdrawal' ? 'Customer ko dena (Rs.)' :
+                type === 'send_money' ? 'Customer se liya (Rs.)' :
                 type === 'bill_payment' ? 'Bill Amount (Rs.)' :
                 type === 'data' ? 'Fee (Rs.)' : 'Amount (Rs.)'
               )}
-              <input type="number" placeholder="0" value={amount} onChange={e => setAmount(e.target.value)}
+              <input type="number" placeholder="0" value={amount}
+                onChange={e => {
+                  setAmount(e.target.value)
+                  if (NEEDS_FEE.includes(type as TransactionType)) {
+                    setFee(calcAutoFee(type as string, e.target.value))
+                  }
+                }}
                 style={{ ...inputStyle, fontSize: 22, fontFamily: 'var(--font-mono)', fontWeight: 700 }} autoFocus />
             </div>
 
@@ -274,9 +292,19 @@ export default function AddTransactionModal({ onAdd, onClose, sessionId, session
             {/* Fee for withdrawal/send_money */}
             {NEEDS_FEE.includes(type as TransactionType) && (
               <div style={{ marginBottom: 14 }}>
-                {label('Fee (Rs.)', '— tumhari kamai')}
+                {label('Fee (Rs.)', '— auto calculated, editable')}
                 <input type="number" placeholder="0" value={fee} onChange={e => setFee(e.target.value)}
                   style={{ ...inputStyle, fontFamily: 'var(--font-mono)' }} />
+                {parseFloat(amount || '0') > 0 && (
+                  <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                    <div style={{ flex: 1, padding: '8px 12px', borderRadius: 8, background: 'var(--green-dim)', color: 'var(--green)', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
+                      Fee: Rs. {parseFloat(fee || '0').toLocaleString()}
+                    </div>
+                    <div style={{ flex: 1, padding: '8px 12px', borderRadius: 8, background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
+                      {type === 'withdrawal' ? 'Customer bheje ga' : 'Total OUT'}: Rs. {(parseFloat(amount || '0') + parseFloat(fee || '0')).toLocaleString()}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

@@ -17,6 +17,7 @@ export default function CheckoutScreen({ session, onDone, onBack }: CheckoutScre
   const [closing, setClosing] = useState<Record<string, string>>({})
   const [submitted, setSubmitted] = useState(false)
   const [checksumResult, setChecksumResult] = useState<{ passed: boolean; mismatches: string[] } | null>(null)
+  const [explanation, setExplanation] = useState('')
 
   useEffect(() => {
     getSessionTransactions(session.id).then(setTransactions)
@@ -45,7 +46,7 @@ export default function CheckoutScreen({ session, onDone, onBack }: CheckoutScre
     setChecksumResult({ passed, mismatches })
     setSubmitted(true)
 
-    await closeSession(session.id, closingBalances, passed)
+    await closeSession(session.id, closingBalances, passed, explanation)
   }
 
   const inputStyle = {
@@ -128,10 +129,16 @@ export default function CheckoutScreen({ session, onDone, onBack }: CheckoutScre
               <span style={{ color: 'var(--green)', fontSize: 13 }}>Total IN</span>
               <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--green)' }}>+{totalIn.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between">
+            <div className="flex justify-between" style={{ marginBottom: explanation ? 10 : 0 }}>
               <span style={{ color: 'var(--red)', fontSize: 13 }}>Total OUT</span>
               <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--red)' }}>-{totalOut.toLocaleString()}</span>
             </div>
+            {explanation && (
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 4 }}>
+                <div style={{ fontSize: 11, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 4 }}>Explanation</div>
+                <div style={{ fontSize: 13, color: 'var(--t2)' }}>{explanation}</div>
+              </div>
+            )}
           </div>
 
           <button
@@ -246,6 +253,30 @@ export default function CheckoutScreen({ session, onDone, onBack }: CheckoutScre
             </div>
           )
         })}
+
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '1.2px', marginBottom: 8 }}>
+            Note / Explanation (optional)
+          </div>
+          <textarea
+            value={explanation}
+            onChange={e => setExplanation(e.target.value)}
+            placeholder="Koi farq ho toh explain karein..."
+            rows={3}
+            style={{
+              width: '100%',
+              background: 'var(--s2)',
+              border: '1px solid var(--border)',
+              borderRadius: 12,
+              color: 'var(--text)',
+              fontSize: 14,
+              padding: '12px 14px',
+              outline: 'none',
+              fontFamily: 'var(--font-baloo)',
+              resize: 'none',
+            }}
+          />
+        </div>
 
         <button
           onClick={handleSubmit}

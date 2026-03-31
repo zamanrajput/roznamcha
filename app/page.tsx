@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import type { Session, OpeningBalances } from '@/lib/types'
-import { getTodaySession, createSession } from '@/lib/data'
+import { getTodaySession, createSession, syncLocalToCloud } from '@/lib/data'
 
 const PinScreen = dynamic(() => import('@/components/PinScreen'), { ssr: false })
 const CheckinScreen = dynamic(() => import('@/components/CheckinScreen'), { ssr: false })
@@ -22,6 +22,8 @@ export default function Home() {
   useEffect(() => {
     const init = async () => {
       try {
+        // One-time sync of any local data to cloud
+        syncLocalToCloud()
         const existing = await getTodaySession()
         if (existing && existing.status === 'open') {
           setSession(existing)

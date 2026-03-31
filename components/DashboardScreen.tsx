@@ -26,6 +26,12 @@ export default function DashboardScreen({ session, onCheckout, onBills }: Dashbo
 
   useEffect(() => { load() }, [load])
 
+  // Auto refresh every 30s to sync from other devices
+  useEffect(() => {
+    const id = setInterval(load, 30000)
+    return () => clearInterval(id)
+  }, [load])
+
   useEffect(() => {
     const tick = () => setLiveTime(new Date().toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
     tick()

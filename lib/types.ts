@@ -35,6 +35,7 @@ export interface Session {
   opening_balances: OpeningBalances
   closing_balances?: OpeningBalances
   checksum_passed?: boolean
+  checksum_explanation?: string
 }
 
 export interface Transaction {
