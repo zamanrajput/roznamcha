@@ -2,8 +2,9 @@
 
 import { useState } from 'react'
 import { X, Plus } from 'lucide-react'
-import type { Account, TransactionType, Direction, Transaction } from '@/lib/types'
-import { ACCOUNT_LABELS, ACCOUNT_COLORS, ACCOUNT_SHORT, TYPE_LABELS, TYPE_ICONS } from '@/lib/types'
+import type { Account, TransactionType, Direction, Transaction, BillType } from '@/lib/types'
+import { ACCOUNT_LABELS, ACCOUNT_COLORS, ACCOUNT_SHORT, TYPE_LABELS, TYPE_ICONS, BILL_TYPE_LABELS } from '@/lib/types'
+import { addBill } from '@/lib/data'
 
 interface AddTransactionModalProps {
   onAdd: (entries: Omit<Transaction, 'id'>[]) => void
@@ -55,6 +56,11 @@ export default function AddTransactionModal({ onAdd, onClose, sessionId, session
   const [fee, setFee] = useState('')
   const [commission, setCommission] = useState('')
   const [description, setDescription] = useState('')
+  // Bill specific fields
+  const [billCustomer, setBillCustomer] = useState('')
+  const [billType, setBillType] = useState<BillType>('wapda')
+  const [billRef, setBillRef] = useState('')
+  const [billDueDate, setBillDueDate] = useState('')
 
   const now = new Date().toISOString()
   const groupId = crypto.randomUUID()
@@ -63,6 +69,7 @@ export default function AddTransactionModal({ onAdd, onClose, sessionId, session
     if (!type || !amount || parseFloat(amount) <= 0) return false
     if (NEEDS_SIM_COST.includes(type as TransactionType) && (!simCost || parseFloat(simCost) <= 0)) return false
     if (NEEDS_COMMISSION.includes(type as TransactionType) && commission !== '' && parseFloat(commission) < 0) return false
+    if (type === 'bill_payment' && !billCustomer) return false
     return true
   })()
 
@@ -366,6 +373,40 @@ export default function AddTransactionModal({ onAdd, onClose, sessionId, session
               </div>
             )}
 
+            {/* Bill specific fields */}
+            {type === 'bill_payment' && (
+              <div className="animate-fade">
+                <div style={{ height: 1, background: 'var(--border)', margin: '4px 0 16px' }} />
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 12 }}>
+                  🧾 Bill Details
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  {label('Customer Name')}
+                  <input type="text" placeholder="Customer ka naam..." value={billCustomer}
+                    onChange={e => setBillCustomer(e.target.value)} style={inputStyle} />
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  {label('Bill Type')}
+                  <select value={billType} onChange={e => setBillType(e.target.value as BillType)}
+                    style={{ ...inputStyle, cursor: 'pointer' }}>
+                    {(['wapda', 'sngpl', 'ptcl', 'sui_gas', 'other'] as BillType[]).map(t => (
+                      <option key={t} value={t}>{BILL_TYPE_LABELS[t]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  {label('Reference No', '(optional)')}
+                  <input type="text" placeholder="e.g. 1234567890" value={billRef}
+                    onChange={e => setBillRef(e.target.value)} style={inputStyle} />
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  {label('Due Date', '(optional)')}
+                  <input type="date" value={billDueDate}
+                    onChange={e => setBillDueDate(e.target.value)} style={inputStyle} />
+                </div>
+              </div>
+            )}
+
             {/* Description */}
             <div style={{ marginBottom: 16 }}>
               {label('Note', '(optional)')}
@@ -401,7 +442,19 @@ export default function AddTransactionModal({ onAdd, onClose, sessionId, session
         )}
 
         <button
-          onClick={() => { onAdd(buildEntries()); }}
+          onClick={async () => {
+            // If bill_payment — also save to bills list
+            if (type === 'bill_payment' && billCustomer) {
+              await addBill({
+                customer_name: billCustomer,
+                bill_type: billType,
+                amount: parseFloat(amount),
+                due_date: billDueDate || sessionDate,
+                reference_no: billRef || undefined,
+              })
+            }
+            onAdd(buildEntries())
+          }}
           disabled={!canSubmit}
           style={{
             width: '100%', padding: '15px', borderRadius: 12, border: 'none',

@@ -60,6 +60,7 @@ export interface Bill {
   bill_type: BillType
   amount: number
   due_date: string
+  reference_no?: string
   reminder_sent: boolean
   paid: boolean
   created_at: string

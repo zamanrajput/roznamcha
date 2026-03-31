@@ -15,7 +15,7 @@ const BILL_TYPES: BillType[] = ['wapda', 'sngpl', 'ptcl', 'sui_gas', 'other']
 export default function BillsScreen({ onBack }: BillsScreenProps) {
   const [bills, setBills] = useState<Bill[]>([])
   const [showAdd, setShowAdd] = useState(false)
-  const [form, setForm] = useState({ customer_name: '', bill_type: 'wapda' as BillType, amount: '', due_date: '' })
+  const [form, setForm] = useState({ customer_name: '', bill_type: 'wapda' as BillType, amount: '', due_date: '', reference_no: '' })
 
   const load = useCallback(async () => {
     const b = await getAllBills()
@@ -78,12 +78,12 @@ export default function BillsScreen({ onBack }: BillsScreenProps) {
       bill_type: form.bill_type,
       amount: parseFloat(form.amount),
       due_date: form.due_date,
+      reference_no: form.reference_no || undefined,
     })
-    setForm({ customer_name: '', bill_type: 'wapda', amount: '', due_date: '' })
+    setForm({ customer_name: '', bill_type: 'wapda', amount: '', due_date: '', reference_no: '' })
     setShowAdd(false)
     load()
   }
-
   const getDueStatus = (dueDate: string) => {
     const now = new Date()
     const due = new Date(dueDate + 'T23:59:00')
@@ -178,6 +178,11 @@ export default function BillsScreen({ onBack }: BillsScreenProps) {
                     <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
                       Due: {new Date(bill.due_date).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </div>
+                    {bill.reference_no && (
+                      <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>
+                        Ref: {bill.reference_no}
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <button
@@ -246,6 +251,10 @@ export default function BillsScreen({ onBack }: BillsScreenProps) {
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 8 }}>Due Date</div>
                 <input type="date" style={inputStyle} value={form.due_date} onChange={e => setForm(p => ({ ...p, due_date: e.target.value }))} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 8 }}>Reference No <span style={{ color: 'var(--t3)', fontWeight: 400, textTransform: 'none' }}>(optional)</span></div>
+                <input style={inputStyle} placeholder="e.g. 1234567890" value={form.reference_no} onChange={e => setForm(p => ({ ...p, reference_no: e.target.value }))} />
               </div>
               <button
                 onClick={handleAdd}

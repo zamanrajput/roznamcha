@@ -50,7 +50,8 @@ export async function createSession(operatorName: string, openingBalances: Openi
   await idbPut('sessions', session)
 
   if (isOnline()) {
-    await supabase.from('sessions').upsert({ ...session, id: today })
+    const { error } = await supabase.from('sessions').upsert(session)
+    if (error) console.error('Session save error:', error)
   }
   return session
 }
@@ -163,8 +164,18 @@ export async function addTransaction(tx: Omit<Transaction, 'id'>): Promise<Trans
 export async function addTransactions(txs: Omit<Transaction, 'id'>[]): Promise<Transaction[]> {
   const newTxs: Transaction[] = txs.map(tx => ({ ...tx, id: crypto.randomUUID() }))
   for (const tx of newTxs) await idbPut('transactions', tx)
+
   if (isOnline()) {
-    await supabase.from('transactions').insert(newTxs)
+    // Ensure session exists in Supabase first
+    if (newTxs.length > 0) {
+      const sessionId = newTxs[0].session_id
+      const session = await idbGet<Session>('sessions', sessionId)
+      if (session) {
+        await supabase.from('sessions').upsert(session)
+      }
+    }
+    const { error } = await supabase.from('transactions').insert(newTxs)
+    if (error) console.error('Transaction insert error:', error)
   }
   return newTxs
 }
@@ -229,61 +240,88 @@ export async function markReminderSent(id: string): Promise<void> {
   }
 }
 
-// ─── ONE-TIME LOCAL → SUPABASE SYNC ──────────────────────────────────────────
-// Runs once on app load — pushes any local-only data to Supabase
-export async function syncLocalToCloud(): Promise<void> {
+// ─── TWO-WAY SYNC ─────────────────────────────────────────────────────────────
+
+// Push all local-only data to Supabase
+export async function pushLocalToCloud(): Promise<void> {
   if (!isOnline()) return
-
-  // Check if already synced
-  const synced = await idbGet<{ key: string; value: string }>('settings', 'cloud_synced')
-  if (synced?.value === 'true') return
-
   try {
-    // Sync sessions
+    // Sessions
     const localSessions = await idbGetAll<Session>('sessions')
     for (const session of localSessions) {
-      const { data } = await supabase.from('sessions').select('id').eq('date', session.date).maybeSingle()
-      if (!data) {
-        await supabase.from('sessions').upsert({ ...session, id: session.date })
-      }
+      await supabase.from('sessions').upsert(session, { onConflict: 'id' })
     }
 
-    // Sync transactions
+    // Transactions — only push ones not in cloud
     const localTxs = await idbGetAll<Transaction>('transactions')
     if (localTxs.length > 0) {
-      // Get existing IDs from Supabase
-      const { data: existingIds } = await supabase
-        .from('transactions')
-        .select('id')
+      const { data: existing } = await supabase
+        .from('transactions').select('id')
         .in('id', localTxs.map(t => t.id))
-
-      const existingSet = new Set((existingIds || []).map((r: { id: string }) => r.id))
-      const newTxs = localTxs.filter(t => !existingSet.has(t.id))
-
-      if (newTxs.length > 0) {
-        // Insert in batches of 50
-        for (let i = 0; i < newTxs.length; i += 50) {
-          await supabase.from('transactions').insert(newTxs.slice(i, i + 50))
-        }
+      const existingSet = new Set((existing || []).map((r: { id: string }) => r.id))
+      const toUpload = localTxs.filter(t => !existingSet.has(t.id))
+      for (let i = 0; i < toUpload.length; i += 50) {
+        await supabase.from('transactions').insert(toUpload.slice(i, i + 50))
       }
     }
 
-    // Sync bills
+    // Bills
     const localBills = await idbGetAll<Bill>('bills')
     for (const bill of localBills) {
-      const { data } = await supabase.from('bills').select('id').eq('id', bill.id).maybeSingle()
-      if (!data) {
-        await supabase.from('bills').insert(bill)
-      }
+      await supabase.from('bills').upsert(bill, { onConflict: 'id' })
     }
-
-    // Mark as synced
-    await idbPut('settings', { key: 'cloud_synced', value: 'true' })
-    console.log('✓ Local data synced to cloud')
   } catch (e) {
-    console.error('Sync error:', e)
+    console.error('Push to cloud error:', e)
   }
 }
+
+// Pull all cloud data into local IDB
+export async function pullFromCloud(): Promise<void> {
+  if (!isOnline()) return
+  try {
+    // Sessions
+    const { data: sessions } = await supabase.from('sessions').select('*')
+    if (sessions) {
+      for (const s of sessions) await idbPut('sessions', { ...s, id: s.date })
+    }
+
+    // Transactions — last 90 days
+    const since = new Date()
+    since.setDate(since.getDate() - 90)
+    const { data: txs } = await supabase
+      .from('transactions').select('*')
+      .gte('date', since.toISOString().split('T')[0])
+    if (txs) {
+      for (const tx of txs) await idbPut('transactions', tx)
+    }
+
+    // Bills
+    const { data: bills } = await supabase.from('bills').select('*').eq('paid', false)
+    if (bills) {
+      for (const b of bills) await idbPut('bills', b)
+    }
+  } catch (e) {
+    console.error('Pull from cloud error:', e)
+  }
+}
+
+// Full two-way sync — call on app load and when internet comes back
+export async function syncLocalToCloud(): Promise<void> {
+  if (!isOnline()) return
+  await pushLocalToCloud()
+  await pullFromCloud()
+  console.log('✓ Two-way sync complete')
+}
+
+// Register online event — auto sync when internet comes back
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    console.log('🌐 Internet back — syncing...')
+    syncLocalToCloud()
+  })
+}
+
+// ─── CHECKSUM ─────────────────────────────────────────────────────────────────
 export function calculateExpectedClosing(
   opening: OpeningBalances,
   transactions: Transaction[]

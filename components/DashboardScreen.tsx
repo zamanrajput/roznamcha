@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { Plus, LogOut, Trash2, Bell, BarChart2 } from 'lucide-react'
 import type { Session, Transaction, Account, TransactionType, Direction } from '@/lib/types'
 import { ACCOUNT_LABELS, ACCOUNT_COLORS, ACCOUNT_SHORT, ALL_ACCOUNTS, TYPE_LABELS } from '@/lib/types'
-import { getSessionTransactions, addTransactions, deleteTransaction, calculateExpectedClosing, syncAllToCloud } from '@/lib/data'
+import { getSessionTransactions, addTransactions, deleteTransaction, calculateExpectedClosing } from '@/lib/data'
+import { supabase } from '@/lib/supabase'
 import AddTransactionModal from './AddTransactionModal'
 
 interface DashboardProps {
@@ -19,23 +20,6 @@ export default function DashboardScreen({ session, onCheckout, onBills, onReport
   const [showAdd, setShowAdd] = useState(false)
   const [liveTime, setLiveTime] = useState('')
   const [deleting, setDeleting] = useState<string | null>(null)
-  const [syncing, setSyncing] = useState(false)
-  const [syncMsg, setSyncMsg] = useState('')
-
-  const handleSync = async () => {
-    setSyncing(true)
-    setSyncMsg('')
-    try {
-      const result = await syncAllToCloud()
-      setSyncMsg(`✓ ${result.transactions} entries synced`)
-      load()
-    } catch {
-      setSyncMsg('✗ Internet nahi hai')
-    } finally {
-      setSyncing(false)
-      setTimeout(() => setSyncMsg(''), 3000)
-    }
-  }
 
   const load = useCallback(async () => {
     const txs = await getSessionTransactions(session.id)
@@ -44,9 +28,23 @@ export default function DashboardScreen({ session, onCheckout, onBills, onReport
 
   useEffect(() => { load() }, [load])
 
-  // Auto refresh every 30s to sync from other devices
+  // Supabase realtime — instant sync across all devices
   useEffect(() => {
-    const id = setInterval(load, 30000)
+    const channel = supabase
+      .channel(`transactions:${session.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'transactions', filter: `session_id=eq.${session.id}` },
+        () => { load() }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [session.id, load])
+
+  // Fallback auto refresh every 15s
+  useEffect(() => {
+    const id = setInterval(load, 15000)
     return () => clearInterval(id)
   }, [load])
 
@@ -92,25 +90,8 @@ export default function DashboardScreen({ session, onCheckout, onBills, onReport
               {new Date(session.date).toLocaleDateString('en-PK', { weekday: 'short', day: 'numeric', month: 'short' })} — {session.operator_name}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {syncMsg && <span style={{ fontSize: 11, color: syncMsg.startsWith('✓') ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{syncMsg}</span>}
-            <button
-              onClick={handleSync}
-              disabled={syncing}
-              title="Sync to cloud"
-              style={{
-                background: 'var(--s2)', border: '1px solid var(--border)',
-                borderRadius: 8, padding: '6px 10px', cursor: 'pointer',
-                color: 'var(--t2)', fontSize: 12, fontWeight: 700,
-                fontFamily: 'var(--font-baloo)',
-                opacity: syncing ? 0.5 : 1,
-              }}
-            >
-              {syncing ? '⏳' : '☁️'} Sync
-            </button>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--t2)' }}>
-              {liveTime}
-            </div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--t2)', textAlign: 'right' }}>
+            {liveTime}
           </div>
         </div>
       </div>
